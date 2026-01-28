@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KÉO BÚA BAO NEON - FPT POLYTECHNIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+
+    <style>
+      body {
+        margin: 0;
+        background: #050505;
+        color: white;
+        overflow: hidden;
+        font-family: "Inter", sans-serif;
+      }
+      .bg-grid {
+        background-image:
+          linear-gradient(to right, #111 1px, transparent 1px),
+          linear-gradient(to bottom, #111 1px, transparent 1px);
+        background-size: 50px 50px;
+      }
+      #webcam-preview {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 240px;
+        height: 180px;
+        border-radius: 15px;
+        border: 2px solid rgba(0, 255, 255, 0.5);
+        transform: scaleX(-1);
+        object-fit: cover;
+        z-index: 100;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+      }
+      .neon-blue {
+        color: #00ffff;
+        text-shadow:
+          0 0 10px #00ffff,
+          0 0 20px #00ffff;
+      }
+      .neon-pink {
+        color: #ff00ff;
+        text-shadow:
+          0 0 10px #ff00ff,
+          0 0 20px #ff00ff;
+      }
+      .neon-yellow {
+        color: #ffff00;
+        text-shadow:
+          0 0 10px #ffff00,
+          0 0 20px #ffff00;
+      }
+      .glass-panel {
+        background: rgba(20, 20, 20, 0.7);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .choice-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 200px;
+        height: 200px;
+        border-radius: 20px;
+        transition: all 0.5s ease;
+      }
+      /* Icon màu sắc theo ảnh mẫu */
+      .icon-bua {
+        color: #ff00ff;
+        filter: drop-shadow(0 0 15px #ff00ff);
+        font-size: 80px;
+      } /* Búa - Hồng */
+      .icon-keo {
+        color: #ffff00;
+        filter: drop-shadow(0 0 15px #ffff00);
+        font-size: 80px;
+      } /* Kéo - Vàng */
+      .icon-bao {
+        color: #00ffff;
+        filter: drop-shadow(0 0 15px #00ffff);
+        font-size: 80px;
+      } /* Bao - Xanh */
+
+      .countdown-pulse {
+        animation: pulse 0.5s infinite alternate;
+      }
+      @keyframes pulse {
+        from {
+          transform: scale(1);
+        }
+        to {
+          transform: scale(1.1);
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-grid">
+    <video id="webcam-preview" autoplay playsinline muted></video>
+    <div id="ui-root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+
+      // Âm thanh
+      const soundShoot = new Audio("shoot.mp3");
+      const soundHit = new Audio("hit.mp3");
+      const soundDone = new Audio("done.mp3");
+
+      const ICONS = {
+        Búa: { icon: "fa-solid fa-hand-fist", class: "icon-bua" },
+        Kéo: { icon: "fa-solid fa-hand-peace", class: "icon-keo" },
+        Bao: { icon: "fa-solid fa-hand", class: "icon-bao" },
+      };
+
+      function RPSGame() {
+        const [gameState, setGameState] = useState("START");
+        const [countdown, setCountdown] = useState(5);
+        const [handStatus, setHandStatus] = useState("WAITING");
+        const [history, setHistory] = useState([]);
+        const [playerChoice, setPlayerChoice] = useState(null);
+        const [botChoice, setBotChoice] = useState(null);
+        const [roundResult, setRoundResult] = useState("");
+
+        const latestLandmarks = useRef(null);
+
+        // Nhận diện cử chỉ tay
+        const getGesture = (landmarks) => {
+          const tips = [8, 12, 16, 20];
+          const bases = [6, 10, 14, 18];
+          let openFingers = 0;
+          for (let i = 0; i < 4; i++) {
+            if (landmarks[tips[i]].y < landmarks[bases[i]].y) openFingers++;
+          }
+          if (openFingers === 0) return "Búa";
+          if (openFingers === 2) return "Kéo";
+          return "Bao";
+        };
+
+        useEffect(() => {
+          const video = document.getElementById("webcam-preview");
+          const hands = new Hands({
+            locateFile: (f) =>
+              `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`,
+          });
+          hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.75,
+          });
+          hands.onResults((res) => {
+            const found =
+              res.multiHandLandmarks && res.multiHandLandmarks.length > 0;
+            latestLandmarks.current = found ? res.multiHandLandmarks[0] : null;
+            setHandStatus(found ? "READY" : "WAITING");
+          });
+
+          const cam = new Camera(video, {
+            onFrame: async () => {
+              await hands.send({ image: video });
+            },
+            width: 640,
+            height: 480,
+          });
+          cam.start();
+        }, []);
+
+        // Vòng lặp đếm ngược logic
+        useEffect(() => {
+          let timer;
+          if (gameState === "PLAYING") {
+            if (handStatus === "WAITING") {
+              setCountdown(5); // Luôn đưa tay dạng nắm đấm, nếu mất tay thì reset về 5
+            } else if (countdown > 0) {
+              timer = setTimeout(() => {
+                setCountdown(countdown - 1);
+                soundShoot.currentTime = 0;
+                soundShoot.play().catch(() => {});
+              }, 1000);
+            } else {
+              executeRound();
+            }
+          }
+          return () => clearTimeout(timer);
+        }, [gameState, countdown, handStatus]);
+
+        const executeRound = () => {
+          // CHỈ GHI NHẬN TẠI GIÂY SỐ 0
+          const currentHand = latestLandmarks.current;
+          const pChoice = currentHand ? getGesture(currentHand) : "Búa"; // Mặc định là búa nếu không thay đổi
+          const choices = ["Búa", "Kéo", "Bao"];
+          const bChoice = choices[Math.floor(Math.random() * 3)];
+
+          setPlayerChoice(pChoice);
+          setBotChoice(bChoice);
+
+          let result = "";
+          if (pChoice === bChoice) result = "HÒA";
+          else if (
+            (pChoice === "Búa" && bChoice === "Kéo") ||
+            (pChoice === "Kéo" && bChoice === "Bao") ||
+            (pChoice === "Bao" && bChoice === "Búa")
+          ) {
+            result = "WIN";
+            setHistory((prev) => [...prev, "W"]);
+            soundHit.play().catch(() => {});
+          } else {
+            result = "LOSE";
+            setHistory((prev) => [...prev, "L"]);
+          }
+
+          setRoundResult(result);
+          setGameState("ROUND_RESULT");
+
+          // Đợi 3 giây rồi kiểm tra kết thúc game
+          setTimeout(() => {
+            setHistory((currentHistory) => {
+              const wins = currentHistory.filter((x) => x === "W").length;
+              const losses = currentHistory.filter((x) => x === "L").length;
+
+              if (wins === 2 || losses === 2 || currentHistory.length === 3) {
+                setGameState("GAME_OVER");
+                soundDone.play().catch(() => {});
+              } else {
+                setGameState("PLAYING");
+                setCountdown(5);
+              }
+              return currentHistory;
+            });
+          }, 3000);
+        };
+
+        return (
+          <div className="relative w-screen h-screen flex flex-col items-center justify-center">
+            {/* Góc trái: Lịch sử thắng thua O X */}
+            <div className="absolute top-10 left-10 flex gap-4 pointer-events-auto">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-16 h-16 glass-panel rounded-full flex items-center justify-center text-3xl font-bold"
+                >
+                  {history[i] === "W" && (
+                    <i className="fa-solid fa-circle text-green-500 drop-shadow-[0_0_10px_#22c55e]"></i>
+                  )}
+                  {history[i] === "L" && (
+                    <i className="fa-solid fa-xmark text-red-500 drop-shadow-[0_0_10px_#ef4444]"></i>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Màn hình Start */}
+            {gameState === "START" && (
+              <div className="text-center pointer-events-auto">
+                <h1 className="text-7xl font-black mb-10 neon-blue italic tracking-tighter uppercase">
+                  Neon Battle
+                </h1>
+                <button
+                  onClick={() => setGameState("PLAYING")}
+                  className="px-16 py-5 bg-cyan-400 text-black font-black uppercase tracking-[0.4em] shadow-[0_0_30px_#0ff] hover:scale-110 transition-all"
+                >
+                  Bắt đầu
+                </button>
+              </div>
+            )}
+
+            {/* Đếm ngược 5s */}
+            {gameState === "PLAYING" && (
+              <div className="text-center">
+                {handStatus === "WAITING" ? (
+                  <div className="text-2xl font-bold neon-pink animate-pulse uppercase tracking-widest">
+                    Đang tìm bàn tay (Nắm đấm)...
+                  </div>
+                ) : (
+                  <div
+                    className={`font-black transition-all duration-300 ${countdown <= 3 ? "text-[15rem] neon-yellow countdown-pulse" : "text-8xl text-white"}`}
+                  >
+                    {countdown}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Kết quả vòng chơi */}
+            {gameState === "ROUND_RESULT" && (
+              <div className="flex flex-col items-center gap-10">
+                <div className="flex gap-16 items-center">
+                  <div className="text-center">
+                    <div className="text-xs uppercase tracking-[0.3em] mb-4 opacity-50">
+                      Bạn
+                    </div>
+                    <div className="choice-card glass-panel border-cyan-500/50">
+                      <i
+                        className={`${ICONS[playerChoice].icon} ${ICONS[playerChoice].class}`}
+                      ></i>
+                    </div>
+                  </div>
+                  <div className="text-5xl font-black italic neon-blue">VS</div>
+                  <div className="text-center">
+                    <div className="text-xs uppercase tracking-[0.3em] mb-4 opacity-50">
+                      Máy
+                    </div>
+                    <div className="choice-card glass-panel border-pink-500/50">
+                      <i
+                        className={`${ICONS[botChoice].icon} ${ICONS[botChoice].class}`}
+                      ></i>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className={`text-8xl font-black italic tracking-widest ${roundResult === "WIN" ? "neon-blue" : roundResult === "LOSE" ? "neon-pink" : "text-white"}`}
+                >
+                  {roundResult === "WIN"
+                    ? "THẮNG"
+                    : roundResult === "LOSE"
+                      ? "THUA"
+                      : "HÒA"}
+                </div>
+              </div>
+            )}
+
+            {/* Kết thúc chung cuộc */}
+            {gameState === "GAME_OVER" && (
+              <div className="text-center glass-panel p-20 rounded-3xl border-2 border-cyan-400 pointer-events-auto">
+                <h2 className="text-2xl tracking-[0.5em] mb-4 opacity-50 uppercase">
+                  Kết quả chung cuộc
+                </h2>
+                <div
+                  className={`text-[10rem] font-black italic mb-10 ${history.filter((x) => x === "W").length >= 2 ? "neon-blue" : "neon-pink"}`}
+                >
+                  {history.filter((x) => x === "W").length >= 2
+                    ? "VICTORY"
+                    : "DEFEAT"}
+                </div>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-12 py-4 border-2 border-cyan-400 text-cyan-400 font-bold hover:bg-cyan-400 hover:text-black transition-all uppercase tracking-widest"
+                >
+                  Chơi lại
+                </button>
+              </div>
+            )}
+
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[11px] tracking-[0.5em] text-white/20 uppercase font-bold">
+              FPT Polytechnic Cần Thơ
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("ui-root"));
+      root.render(<RPSGame />);
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </body>
+</html>
