@@ -78,6 +78,7 @@
         const [isGameOver, setIsGameOver] = useState(false);
         const [score, setScore] = useState(0);
         const [timeLeft, setTimeLeft] = useState(15);
+        const [gameDuration, setGameDuration] = useState(15); // State mới để lưu cấu hình thời gian
         const [handStatus, setHandStatus] = useState("ĐANG TÌM TAY...");
 
         const gameRef = useRef({
@@ -149,10 +150,8 @@
 
                 if (dist < 0.05) {
                   if (!g.isFiring) {
-                    // PHÁT ÂM THANH BẮN
                     soundShoot.currentTime = 0;
                     soundShoot.play().catch(() => {});
-
                     checkHit();
                     g.isFiring = true;
                     g.crosshair.scale.set(0.7, 0.7, 1);
@@ -175,10 +174,8 @@
           const g = gameRef.current;
           g.targets.forEach((t) => {
             if (t.mesh.position.distanceTo(g.crosshair.position) < 0.6) {
-              // PHÁT ÂM THANH TRÚNG MỤC TIÊU
               soundHit.currentTime = 0;
               soundHit.play().catch(() => {});
-
               setScore((prev) => prev + 100);
               resetTarget(t);
             }
@@ -200,7 +197,6 @@
           const video = document.getElementById("video-container");
           video.style.display = "block";
 
-          // Khởi tạo camera và hands (giữ nguyên logic cũ)
           const hands = new Hands({
             locateFile: (f) =>
               `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`,
@@ -227,7 +223,6 @@
           });
           await cam.start();
 
-          // Tạo mục tiêu
           for (let i = 0; i < 6; i++) {
             const mesh = new THREE.Mesh(
               new THREE.IcosahedronGeometry(0.3, 0),
@@ -243,7 +238,16 @@
           setIsRunning(true);
           setIsGameOver(false);
           setScore(0);
-          setTimeLeft(15);
+          setTimeLeft(gameDuration); // Sử dụng thời gian đã chọn
+        };
+
+        // Hàm thay đổi thời gian
+        const adjustDuration = (amount) => {
+          setGameDuration((prev) => {
+            const next = prev + amount;
+            if (next >= 10 && next <= 30) return next;
+            return prev;
+          });
         };
 
         useEffect(() => {
@@ -251,9 +255,7 @@
           if (isRunning && timeLeft > 0) {
             timer = setInterval(() => setTimeLeft((p) => p - 1), 1000);
           } else if (timeLeft === 0 && isRunning) {
-            // PHÁT ÂM THANH KẾT THÚC
             soundDone.play().catch(() => {});
-
             gameRef.current.isRunning = false;
             setIsRunning(false);
             setIsGameOver(true);
@@ -286,9 +288,34 @@
 
             {!isRunning && !isGameOver && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 pointer-events-auto">
-                <h1 className="text-7xl font-black text-white mb-10 tracking-tighter uppercase">
+                <h1 className="text-7xl font-black text-white mb-6 tracking-tighter uppercase">
                   NEON <span className="neon-text">STRIKE</span>
                 </h1>
+
+                {/* Bộ điều chỉnh thời gian */}
+                <div className="flex items-center gap-6 mb-10 p-4 glass-panel rounded-xl">
+                  <button
+                    onClick={() => adjustDuration(-5)}
+                    className="w-12 h-12 flex items-center justify-center bg-white/10 text-white text-2xl font-bold hover:bg-red-500/50 transition-colors rounded-lg"
+                  >
+                    -
+                  </button>
+                  <div className="text-center">
+                    <div className="text-[10px] text-cyan-400 font-bold tracking-widest uppercase">
+                      DURATION
+                    </div>
+                    <div className="text-3xl font-black text-white">
+                      {gameDuration}s
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => adjustDuration(5)}
+                    className="w-12 h-12 flex items-center justify-center bg-white/10 text-white text-2xl font-bold hover:bg-cyan-500/50 transition-colors rounded-lg"
+                  >
+                    +
+                  </button>
+                </div>
+
                 <button
                   onClick={startGame}
                   className="px-20 py-6 bg-cyan-400 text-black font-black uppercase tracking-[0.5em] shadow-[0_0_30px_#0ff] hover:scale-105 transition-transform"
