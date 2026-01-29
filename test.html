@@ -77,8 +77,8 @@
         const [isRunning, setIsRunning] = useState(false);
         const [isGameOver, setIsGameOver] = useState(false);
         const [score, setScore] = useState(0);
-        const [timeLeft, setTimeLeft] = useState(15);
-        const [gameDuration, setGameDuration] = useState(15); // State mới để lưu cấu hình thời gian
+        const [timeLeft, setTimeLeft] = useState(30);
+        const [gameDuration, setGameDuration] = useState(30); // State mới để lưu cấu hình thời gian
         const [handStatus, setHandStatus] = useState("ĐANG TÌM TAY...");
 
         const gameRef = useRef({
@@ -245,7 +245,7 @@
         const adjustDuration = (amount) => {
           setGameDuration((prev) => {
             const next = prev + amount;
-            if (next >= 10 && next <= 30) return next;
+            if (next >= 10 && next <= 60) return next;
             return prev;
           });
         };
