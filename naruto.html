@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ninja AR - Jutsu Master Custom</title>
+    <style>
+      :root {
+        --ui-bg: rgba(0, 0, 0, 0.7);
+        --ui-border: rgba(255, 255, 255, 0.2);
+        --ui-text: #f4f7fb;
+        --ui-accent: #ff3333; /* Màu đỏ Sharingan */
+      }
+
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: "Segoe UI", sans-serif;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #camera {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1);
+      }
+
+      .effect-video {
+        position: absolute;
+        pointer-events: none;
+        mix-blend-mode: screen;
+        display: none;
+        z-index: 10;
+        object-fit: contain;
+      }
+
+      #instructions {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: var(--ui-bg);
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid var(--ui-border);
+        backdrop-filter: blur(10px);
+        z-index: 100;
+        color: var(--ui-text);
+        width: 280px;
+      }
+      #instructions h3 {
+        margin: 0 0 10px 0;
+        font-size: 18px;
+        color: #ffcc00;
+        border-bottom: 1px solid var(--ui-border);
+        padding-bottom: 5px;
+      }
+      #instructions ul {
+        margin: 0;
+        padding-left: 20px;
+        font-size: 14px;
+        line-height: 1.8;
+        list-style-type: none;
+      }
+
+      #status {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--ui-bg);
+        padding: 8px 20px;
+        border-radius: 20px;
+        font-size: 14px;
+        z-index: 100;
+        color: white;
+        border: 1px solid var(--ui-accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <video id="camera" autoplay playsinline></video>
+
+      <video id="shuriken-vid" class="effect-video" loop muted playsinline>
+        <source src="./shuriken_effect.mp4" type="video/mp4" />
+      </video>
+
+      <video id="chidori-vid" class="effect-video" loop muted playsinline>
+        <source src="./chidori_effect.mp4" type="video/mp4" />
+      </video>
+
+      <video id="sharingan-vid" class="effect-video" loop muted playsinline>
+        <source src="./sharingan_effect.mp4" type="video/mp4" />
+      </video>
+
+      <div id="instructions">
+        <h3>Ninjutsu Guide</h3>
+        <ul>
+          <li>✋ <b>Tay Trái xòe:</b> Shuriken</li>
+          <li>✋ <b>Tay Phải xòe:</b> Chidori</li>
+          <li>☝️☝️ <b>Mỗi tay 1 ngón trỏ:</b> Sharingan</li>
+          <li>✊ <b>Nắm tay:</b> Hủy chiêu</li>
+        </ul>
+      </div>
+
+      <div id="status">Đang khởi tạo nhẫn thuật...</div>
+    </div>
+
+    <script type="module">
+      import {
+        GestureRecognizer,
+        FilesetResolver,
+      } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+      const cameraEl = document.getElementById("camera");
+      const statusEl = document.getElementById("status");
+
+      const effects = {
+        left: {
+          el: document.getElementById("shuriken-vid"),
+          smoothX: 0,
+          smoothY: 0,
+          baseSize: 600,
+        }, // Tăng size lên 600
+        right: {
+          el: document.getElementById("chidori-vid"),
+          smoothX: 0,
+          smoothY: 0,
+          baseSize: 600,
+        }, // Tăng size lên 600
+        both: {
+          el: document.getElementById("sharingan-vid"),
+          smoothX: 0,
+          smoothY: 0,
+          baseSize: 1000,
+        }, // Sharingan siêu lớn
+      };
+
+      let gestureRecognizer;
+      let running = false;
+
+      async function init() {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm",
+        );
+        gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+          },
+          runningMode: "VIDEO",
+          numHands: 2,
+        });
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 1280, height: 720 },
+        });
+        cameraEl.srcObject = stream;
+        cameraEl.onloadedmetadata = () => {
+          running = true;
+          renderLoop();
+          statusEl.innerText = "Sẵn sàng!";
+        };
+      }
+
+      // Hàm kiểm tra chỉ giơ 1 ngón trỏ
+      function isOneFinger(landmarks) {
+        const tip8 = landmarks[8].y < landmarks[6].y; // Ngón trỏ mở
+        const tip12 = landmarks[12].y > landmarks[10].y; // Ngón giữa đóng
+        const tip16 = landmarks[16].y > landmarks[14].y; // Ngón nhẫn đóng
+        const tip20 = landmarks[20].y > landmarks[18].y; // Ngón út đóng
+        return tip8 && tip12 && tip16 && tip20;
+      }
+
+      function updateEffect(effect, x, y, scale, visible) {
+        if (!visible) {
+          effect.el.style.display = "none";
+          effect.el.pause();
+          return;
+        }
+
+        effect.smoothX += (x - effect.smoothX) * 0.2;
+        effect.smoothY += (y - effect.smoothY) * 0.2;
+
+        effect.el.style.display = "block";
+        if (effect.el.paused) effect.el.play();
+
+        // Kích thước dựa trên baseSize đã cấu hình ở trên
+        const size = effect.baseSize * scale;
+        effect.el.style.width = `${size}px`;
+        effect.el.style.height = `${size}px`;
+        effect.el.style.left = `${effect.smoothX - size / 2}px`;
+        effect.el.style.top = `${effect.smoothY - size / 2}px`;
+      }
+
+      function renderLoop() {
+        if (!running) return;
+
+        const results = gestureRecognizer.recognizeForVideo(
+          cameraEl,
+          performance.now(),
+        );
+        let handStates = { left: null, right: null, oneFingerCount: 0 };
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          results.landmarks.forEach((landmarks, index) => {
+            const label = results.handednesses[index][0].categoryName;
+            const gesture = results.gestures[index][0].categoryName;
+            const isActuallyLeft = label === "Right"; // Mirror logic
+
+            if (isOneFinger(landmarks)) handStates.oneFingerCount++;
+
+            const centerX = (1 - landmarks[9].x) * window.innerWidth;
+            const centerY = landmarks[9].y * window.innerHeight;
+            // Tăng độ nhạy của scale
+            const scale = Math.abs(landmarks[5].x - landmarks[17].x) * 15;
+
+            const state = {
+              x: centerX,
+              y: centerY,
+              scale,
+              open: gesture === "Open_Palm",
+            };
+            if (isActuallyLeft) handStates.left = state;
+            else handStates.right = state;
+          });
+        }
+
+        // Nếu cả 2 tay đều giơ 1 ngón -> SHARINGAN
+        if (handStates.oneFingerCount >= 2) {
+          const midX =
+            ((handStates.left?.x || 0) +
+              (handStates.right?.x || window.innerWidth / 2)) /
+            2;
+          const midY =
+            ((handStates.left?.y || 0) +
+              (handStates.right?.y || window.innerHeight / 2)) /
+            2;
+          updateEffect(effects.both, midX, midY, 1.2, true);
+          updateEffect(effects.left, 0, 0, 0, false);
+          updateEffect(effects.right, 0, 0, 0, false);
+          statusEl.innerText = "EYE OF THE REAPER: SHARINGAN";
+        } else {
+          updateEffect(effects.both, 0, 0, 0, false);
+          updateEffect(
+            effects.left,
+            handStates.left?.x,
+            handStates.left?.y,
+            handStates.left?.scale,
+            handStates.left?.open,
+          );
+          updateEffect(
+            effects.right,
+            handStates.right?.x,
+            handStates.right?.y,
+            handStates.right?.scale,
+            handStates.right?.open,
+          );
+
+          if (handStates.left?.open || handStates.right?.open)
+            statusEl.innerText = "Jutsu Active";
+          else statusEl.innerText = "Sẵn sàng thi triển";
+        }
+
+        requestAnimationFrame(renderLoop);
+      }
+
+      init();
+    </script>
+  </body>
+</html>
